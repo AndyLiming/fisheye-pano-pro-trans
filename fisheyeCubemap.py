@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 # transform fisheye images to cubemap projection
 # Note： Fish-eye image
-# fisheye : valid imaging area height=width=radius equi-distant projection,
+# fisheye : valid imaging area height=width=radius, equi-distant projection,
 
 # Note： Cubemap image
 # cube map: each face is a square. 6 faces are arranged into a row with the order:
@@ -16,7 +16,7 @@ import torch.nn.functional as F
 
 
 class Fisheye2Cubemap:
-  def __init__(self, cube_face_h, cube_face_w, fish_h, fish_w, fish_FoV, Rot=None):
+  def __init__(self, cube_face_h, cube_face_w, fish_h, fish_w, fish_FoV, Rot=np.identity(3, dtype=np.float32)):
     self.FoV = fish_FoV // 2
     self.radius = fish_h // 2
     R_list = []
@@ -44,30 +44,26 @@ class Fisheye2Cubemap:
     y = yc - face_y
     z = np.ones_like(x) * ((cube_face_h - 1.0) / 2)
     x, y, z = x / z, y / z, z / z
-    print(x.shape, y.shape, z.shape)
     D = np.sqrt(x * x + y * y + z * z)
     coor3d = np.expand_dims(np.dstack([x, y, z]), -1)
+    coor3d_r = np.matmul(Rot, coor3d)
     for i in range(6):
-      coor3d_r = np.matmul(R_list[i], coor3d).squeeze(-1)
-      print(coor3d.shape, coor3d_r.shape, R_list[i].shape)
+      coor3d_rf = np.matmul(R_list[i], coor3d_r).squeeze(-1)
 
-      fish_theta = np.arccos(coor3d_r[:, :, 2] / D)
+      fish_theta = np.arccos(coor3d_rf[:, :, 2] / D)
       invalidMask = (fish_theta > (self.FoV / 180 * np.pi))
       fish_theta[invalidMask] = 0
       self.invalidMaskList.append(invalidMask)
-      fish_phi = np.arctan2(-coor3d_r[:, :, 1], coor3d_r[:, :, 0])
-      print(np.max(fish_phi), np.min(fish_phi))
+      fish_phi = np.arctan2(-coor3d_rf[:, :, 1], coor3d_rf[:, :, 0])
 
       fish_r = fish_theta / (self.FoV / 180 * np.pi) * self.radius
-      print(np.max(fish_r), np.min(fish_r))
+
       fish_x = -fish_r * np.cos(fish_phi)
       fish_y = fish_r * np.sin(fish_phi)
-      print(np.max(fish_x), np.min(fish_x))
-      print(np.max(fish_y), np.min(fish_y))
 
       u = (fish_x) / (fish_w - 1) * 2.0
       v = (fish_y) / (fish_h - 1) * 2.0
-      print(u.shape)
+
       self.grid_list.append(np.dstack([u, v]).astype(np.float32))
 
   def trans(self, fish):
@@ -96,8 +92,6 @@ class Cubemap2Fisheye:
     #fish_y = (fish_y.astype(np.float32) - (fish_h - 1) / 2)
     #fish_x = (fish_x.astype(np.float32)) * fish_w / (fish_w - 1) - self.radius
     fish_y = (fish_y.astype(np.float32)) * fish_h / (fish_h - 1) - self.radius
-    print(fish_x)
-    print(fish_y)
     fish_theta = np.sqrt(fish_x * fish_x + fish_y * fish_y) / self.radius * self.FoV  #theta deg
     fish_theta = fish_theta / 180 * np.pi
     fish_phi = np.arctan2(-fish_y, -fish_x)
@@ -187,14 +181,17 @@ class Cubemap2Fisheye:
 
 
 if __name__ == '__main__':
-  f2c = Fisheye2Cubemap(512, 512, 1024, 1024, 210)
-  c2f = Cubemap2Fisheye(512, 512, 1024, 1024, 210)
-  fish = cv2.imread('./imgs/fish210.png').transpose((2, 0, 1)).astype(np.float32)
+  FoV = 210
+  f2c = Fisheye2Cubemap(512, 512, 1024, 1024, FoV)
+  c2f = Cubemap2Fisheye(512, 512, 1024, 1024, FoV)
+  fish = cv2.imread('./imgs/fish' + str(FoV) + '.png').transpose((2, 0, 1)).astype(np.float32)
   cube = f2c.trans(fish).astype(np.float32)
-  # cube = cube.transpose((1, 2, 0))
-  # cube = (cube - np.min(cube)) / (np.max(cube) - np.min(cube)) * 255
-  # cv2.imwrite('cube' + '.png', cube.astype(np.uint8))
+  cubesave = np.zeros([3, 512, 512 * 6])
+  for i in range(6):
+    cubesave[:, :, i * 512:(i + 1) * 512] = cube[i, :, :, :]
+  cubesave = cubesave.transpose((1, 2, 0))
+  cv2.imwrite('./imgs/cubesave' + str(FoV) + '.png', cubesave.astype(np.uint8))
   fish2 = c2f.trans(cube)
   fish2 = fish2.transpose((1, 2, 0))
   fish2 = (fish2 - np.min(fish2)) / (np.max(fish2) - np.min(fish2)) * 255
-  cv2.imwrite('./imgs/fish2' + '.png', fish2.astype(np.uint8))
+  cv2.imwrite('./imgs/fish2_' + str(FoV) + '.png', fish2.astype(np.uint8))
