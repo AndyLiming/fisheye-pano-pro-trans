@@ -83,12 +83,6 @@ class Fisheye2ERP:
     fish_phi = np.arctan2(coor3d_r[:, :, 1], coor3d_r[:, :, 0]).astype(np.float32)
     self.invalidMask = (fish_theta > self.FovTh)
 
-    # cv2.imwrite('mask.png', self.invalidMask.astype(np.uint8) * 255)
-    # fish_phi_save = 255 * (fish_phi - np.min(fish_phi)) / (np.max(fish_phi) - np.min(fish_phi))
-    # cv2.imwrite('fish_phi.png', fish_phi_save.astype(np.uint8))
-    # fish_theta_save = 255 * (fish_theta - np.min(fish_theta)) / (np.max(fish_theta) - np.min(fish_theta))
-    # cv2.imwrite('fishe_theta.png', fish_theta_save.astype(np.uint8))
-
     fish_theta[self.invalidMask] = 0.0
     self.invalidMask = self.invalidMask.squeeze(-1)
 
