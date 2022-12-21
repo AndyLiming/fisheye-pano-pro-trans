@@ -190,7 +190,7 @@ for Kannala_Brandt(KB) projection fisheye images
 """
 # transform fisheye images to cubemap projection
 # Note： Fish-eye image
-# fisheye : valid imaging area height=width=radius, equi-distant projection,
+# fisheye : valid imaging area height=width=radius, Kannala_Brandt projection,
 
 # Note： Cubemap image
 # cube map: each face is a square. 6 faces are arranged into a row with the order:
@@ -208,11 +208,21 @@ class FisheyeKB2Cubemap:
     self.invalidMaskList = []
     phi = np.array([1, 1 / 2, 0, -1 / 2]) * np.pi  # back,left,front,right
     theta = np.array([-1 / 2, 1 / 2]) * np.pi  #up, down
-    #NOTE: need to fixed here
+
     self.fish_h = fish_h
     self.fish_w = fish_w
     self.cube_face_h = cube_face_h
     self.cube_face_w = cube_face_w
+
+    # KB model paras
+    self.fx = fx
+    self.fy = fy
+    self.cx = cx
+    self.cy = cy
+    self.kb_theta_coes = kb_theta_coes
+    # assume the camera model is KB4: d_theta = theta+k1*theta^3+k2*theta^5+k3*theta^7+k4*theta^9
+    assert (len(self.kb_theta_coes) == 4)
+
     for ph in phi:
       r = ph * np.array([0, 1, 0])
       R = cv2.Rodrigues(r)[0]
@@ -233,21 +243,30 @@ class FisheyeKB2Cubemap:
     coor3d = np.expand_dims(np.dstack([x, y, z]), -1)
     coor3d_r = np.matmul(Rot, coor3d)
     for i in range(6):
-      coor3d_rf = np.matmul(R_list[i], coor3d_r).squeeze(-1)
-
-      fish_theta = np.arccos(coor3d_rf[:, :, 2] / D)
+      coor3d_rf = np.matmul(R_list[i], coor3d_r).squeeze(-1)  #x,y,z = left,up,front
+      fisheye_r = np.sqrt(coor3d_rf[:, :, 0] * coor3d_rf[:, :, 0] + coor3d_rf[:, :, 1] * coor3d_rf[:, :, 1])
+      fish_theta = np.clip(np.arctan2(fisheye_r, coor3d_rf[:, :, 2]), 0, np.pi)
       invalidMask = (fish_theta > (self.FoV / 180 * np.pi))
       fish_theta[invalidMask] = 0
+      fish_theta_sq = fish_theta * fish_theta
+      fish_dtheta = fish_theta + self.kb_theta_coes[0] * fish_theta * fish_theta_sq + self.kb_theta_coes[1] * fish_theta * fish_theta_sq * fish_theta_sq + self.kb_theta_coes[
+          2] * fish_theta * fish_theta_sq * fish_theta_sq * fish_theta_sq + self.kb_theta_coes[3] * fish_theta * fish_theta_sq * fish_theta_sq * fish_theta_sq * fish_theta_sq
+      # we define y==up and x==left, while in Image Coordinate y==down and x==right
+      fish_phi = np.clip(np.arctan2(-coor3d_rf[:, :, 1], -coor3d_rf[:, :, 0]), -np.pi, np.pi)
       self.invalidMaskList.append(invalidMask)
-      fish_phi = np.arctan2(-coor3d_rf[:, :, 1], coor3d_rf[:, :, 0])
 
-      fish_r = fish_theta / (self.FoV / 180 * np.pi) * self.radius
+      fish_x = self.fx * fish_dtheta * np.cos(fish_phi) + self.cx
+      fish_y = self.fy * fish_dtheta * np.sin(fish_phi) + self.cy
+      # print(fish_x.max(), fish_x.min())
+      # print(fish_y.max(), fish_y.min())
 
-      fish_x = -fish_r * np.cos(fish_phi)
-      fish_y = fish_r * np.sin(fish_phi)
-
-      u = (fish_x) / (fish_w - 1) * 2.0
-      v = (fish_y) / (fish_h - 1) * 2.0
+      # normalization
+      u = (fish_x) / (fish_w - 1) * 2.0 - 1
+      v = (fish_y) / (fish_h - 1) * 2.0 - 1
+      u[u > 1] = 1
+      u[u < -1] = -1
+      v[v > 1] = 1
+      v[v < -1] = -1
 
       self.grid_list.append(np.dstack([u, v]).astype(np.float32))
 
@@ -367,16 +386,20 @@ class Cubemap2FisheyeKB:
 
 if __name__ == '__main__':
   FoV = 210
-  f2c = Fisheye2Cubemap(512, 512, 1024, 1024, FoV)
-  c2f = Cubemap2Fisheye(512, 512, 1024, 1024, FoV)
+  fx = fy = (1024) / (FoV / 180 * np.pi)
+  cx = cy = (1024 - 1) / 2
+  kb_theta_coes = [0, 0, 0, 0]
+  #f2c = Fisheye2Cubemap(512, 512, 1024, 1024, FoV)
+  f2c = FisheyeKB2Cubemap(512, 512, 1024, 1024, FoV, fx, fy, cx, cy, kb_theta_coes)
+  #c2f = Cubemap2Fisheye(512, 512, 1024, 1024, FoV)
   fish = cv2.imread('./imgs/fish' + str(FoV) + '.png').transpose((2, 0, 1)).astype(np.float32)
   cube = f2c.trans(fish).astype(np.float32)
   cubesave = np.zeros([3, 512, 512 * 6])
   for i in range(6):
     cubesave[:, :, i * 512:(i + 1) * 512] = cube[i, :, :, :]
   cubesave = cubesave.transpose((1, 2, 0))
-  cv2.imwrite('./imgs/cubesave' + str(FoV) + '.png', cubesave.astype(np.uint8))
-  fish2 = c2f.trans(cube)
-  fish2 = fish2.transpose((1, 2, 0))
-  fish2 = (fish2 - np.min(fish2)) / (np.max(fish2) - np.min(fish2)) * 255
-  cv2.imwrite('./imgs/fish2_' + str(FoV) + '.png', fish2.astype(np.uint8))
+  cv2.imwrite('./imgs/cubesave' + str(FoV) + '_kb.png', cubesave.astype(np.uint8))
+  # fish2 = c2f.trans(cube)
+  # fish2 = fish2.transpose((1, 2, 0))
+  # fish2 = (fish2 - np.min(fish2)) / (np.max(fish2) - np.min(fish2)) * 255
+  # cv2.imwrite('./imgs/fish2_' + str(FoV) + '.png', fish2.astype(np.uint8))
