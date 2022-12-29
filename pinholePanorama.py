@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 
 def pinhole2Cassini(img, fov_h, fov_w, ca_h, ca_w):
@@ -48,9 +49,45 @@ def pinhole2Cassini(img, fov_h, fov_w, ca_h, ca_w):
   print(mask.shape)
 
 
+class Cassini2pinhole:
+  def __init__(self, ca_h, ca_w, p_h, p_w, focal):
+    # p_h = np.round(2 * focal * np.tan(fov_h / 2 / 180 * np.pi)).astype(np.int32)
+    # p_w = np.round(2 * focal * np.tan(fov_w / 2 / 180 * np.pi)).astype(np.int32)
+    xc = (p_w - 1.0) / 2
+    yc = (p_h - 1.0) / 2
+    face_x, face_y = np.meshgrid(range(p_w), range(p_h))
+    x = face_x - xc
+    y = face_y - yc
+    z = np.ones_like(x) * focal
+    x, y, z = x / z, y / z, z / z
+    phi = np.arctan2(x, np.sqrt(y * y + z * z)).astype(np.float32)
+    theta = np.arctan2(y, z).astype(np.float32)
+    phi = phi / (np.pi) * 2.0
+    theta = theta / np.pi
+    print(phi.shape, phi.max(), phi.min())
+    print(theta.shape, theta.max(), theta.min())
+    self.grid = np.stack([phi, theta], axis=-1)
+    self.grid = torch.from_numpy(self.grid).unsqueeze(0).cuda()
+
+  def trans(self, ca):
+    c, h, w = ca.shape
+    ca = torch.from_numpy(ca).unsqueeze(0).cuda()
+    pinhole = F.grid_sample(ca, self.grid, mode='bilinear', align_corners=True)
+    # pinhole = F.interpolate(pinhole, size=(out_h, out_w), mode='bicubic', align_corners=True)
+    pinhole = pinhole.squeeze_(0).cpu().numpy()
+    return pinhole
+
+
 if __name__ == '__main__':
-  img = cv2.imread('fov90.png').astype(np.float32)
+  # img = cv2.imread('fov90.png').astype(np.float32)
   fov_h, fov_w = 90, 90
   ca_h, ca_w = 1024, 512
-
-  pinhole2Cassini(img, fov_h, fov_w, ca_h, ca_w)
+  img = cv2.imread('./imgs/002430_13_rgb1.png').astype(np.float32).transpose((2, 0, 1))
+  #pinhole2Cassini(img, fov_h, fov_w, ca_h, ca_w)
+  ca_h, ca_w, p_h, p_w, focal = 1024, 512, 384, 512, 220
+  fov_h = np.arctan2(p_h / 2, focal) / np.pi * 180 * 2
+  fov_w = np.arctan2(p_w / 2, focal) / np.pi * 180 * 2
+  print(fov_h, fov_w)
+  c2p = Cassini2pinhole(ca_h, ca_w, p_h, p_w, focal)
+  pinhole = c2p.trans(img)
+  cv2.imwrite('./imgs/c2p.png', pinhole.transpose((1, 2, 0)).astype(np.uint8))
