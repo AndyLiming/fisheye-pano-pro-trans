@@ -107,6 +107,9 @@ class Fisheye2ERP:
     erp[mask] = 0.0
     return erp
 
+  def get_fish_mask(self):
+    return self.invalidMask
+
 
 def get_rotate_matrix(x_a, y_a, z_a):  # 绕z,y,z轴旋转的角度（弧度制）z轴朝前，y轴朝上，x轴朝左
   Rx = np.array([[1, 0, 0], [0, np.cos(x_a), -np.sin(x_a)], [0, np.sin(x_a), np.cos(x_a)]])
@@ -132,3 +135,6 @@ if __name__ == '__main__':
   erp_2 = erp_2.transpose((1, 2, 0))
   erp_2 = (erp_2 - np.min(erp_2)) / (np.max(erp_2) - np.min(erp_2)) * 255
   cv2.imwrite('./imgs/erp_2_' + str(FoV) + '.png', erp_2.astype(np.uint8))
+
+  fish_mask = ~(f2e.get_fish_mask())
+  cv2.imwrite('./imgs/fish_mask_erp.png', fish_mask * 255)
