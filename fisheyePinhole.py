@@ -75,7 +75,7 @@ class Fisheye2Pinhole:
 
 
 class Pinhole2Fisheye:
-  def __init__(self, cube_face_h, cube_face_w, fish_h, fish_w, fish_FoV, Rot=np.identity(3, dtype=np.float32)):
+  def __init__(self, cube_face_h, cube_face_w, fish_h, fish_w, fish_FoV, pinhole_hfov, Rot=np.identity(3, dtype=np.float32)):
     self.radius = (fish_h) // 2
     self.FoV = fish_FoV // 2
     self.FovTh = self.FoV / 180 * np.pi
@@ -90,6 +90,9 @@ class Pinhole2Fisheye:
     fish_phi = np.arctan2(-fish_y, -fish_x)
 
     self.invalidMask = (fish_theta > self.FovTh)
+
+    self.h_th_norm = np.tan((pinhole_hfov / 180 * np.pi) / 2)
+    self.v_th_norm = self.h_th_norm * cube_face_h / cube_face_w
     #fish_theta[self.invalidMask] = 0
 
     z = np.cos(fish_theta)
@@ -105,13 +108,19 @@ class Pinhole2Fisheye:
 
     # Compute the front grid
     grid_front_raw = coor3d_r / np.abs(z_3d)
-    grid_front_w = -grid_front_raw[:, :, 0]
-    grid_front_h = -grid_front_raw[:, :, 1]
+    grid_front_w = -grid_front_raw[:, :, 0] / self.h_th_norm
+    grid_front_h = -grid_front_raw[:, :, 1] / self.v_th_norm
     grid_front = np.concatenate([np.expand_dims(grid_front_w, 2), np.expand_dims(grid_front_h, 2)], 2)
     mask_front = ((grid_front_w <= 1) * (grid_front_w >= -1)) * ((grid_front_h <= 1) * (grid_front_h >= -1)) * (grid_front_raw[:, :, 2] > 0)
     masked_grid_front = grid_front * np.float32(np.expand_dims(mask_front, 2))
     self.masked_grid_list.append(masked_grid_front)
     self.mask_list.append(mask_front)
+
+  def get_fish_mask(self):
+    return self.invalidMask
+
+  def get_pinhole_mask(self):
+    return self.mask_list[0]
 
   def trans(self, pinhole):  #cube_faces:6 x c x h x w, 6 faces of the cube map. back - left - front - right - up - down
     c, h, w = pinhole.shape
@@ -131,7 +140,7 @@ if __name__ == '__main__':
   Rot, _ = cv2.Rodrigues(r)
   FoV = 190
   f2p = Fisheye2Pinhole(1080, 1920, 2560, 2560, FoV)
-  #c2f = Cubemap2Fisheye(512, 512, 1024, 1024, FoV)
+  p2f = Pinhole2Fisheye(1080, 1920, 2560, 2560, FoV, 60)
   fish = cv2.imread('./imgs/fe_rgb13_6.jpg').transpose((2, 0, 1)).astype(np.float32)
   cube = f2p.trans(fish).astype(np.float32)
   cubesave = cube.transpose((1, 2, 0)).astype(np.uint8)
@@ -140,7 +149,16 @@ if __name__ == '__main__':
   tmp = cv2.imread('./imgs/ph_rgb8_6.jpg')
   tmp = cv2.rotate(tmp, cv2.ROTATE_90_CLOCKWISE)
   cv2.imwrite('./imgs/pin_right.png', tmp)
+  fish_back = p2f.trans(cube)
+  fishsave = fish_back.transpose((1, 2, 0)).astype(np.uint8)
+  cv2.imwrite('./imgs/fish_left.png', fishsave)
   # fish2 = c2f.trans(cube)
   # fish2 = fish2.transpose((1, 2, 0))
   # fish2 = (fish2 - np.min(fish2)) / (np.max(fish2) - np.min(fish2)) * 255
   # cv2.imwrite('./imgs/fish2_' + str(FoV) + '.png', fish2.astype(np.uint8))
+
+  fish_mask = ~(p2f.get_fish_mask())
+  pinhole_mask = p2f.get_pinhole_mask()
+  print(fish_mask.shape, pinhole_mask.shape, fish_mask.dtype, pinhole_mask.dtype)
+  cv2.imwrite('./imgs/fish_mask.png', fish_mask * 255)
+  cv2.imwrite('./imgs/pinhole_mask.png', pinhole_mask * 255)
