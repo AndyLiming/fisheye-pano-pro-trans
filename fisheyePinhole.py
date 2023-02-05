@@ -21,7 +21,7 @@ for equi-distant projection fisheye images
 
 
 class Fisheye2Pinhole:
-  def __init__(self, pinhole_h, pinhole_w, fish_h, fish_w, fish_FoV, Rot=np.identity(3, dtype=np.float32)):
+  def __init__(self, pinhole_h, pinhole_w, fish_h, fish_w, fish_FoV, pinhole_hfov, Rot=np.identity(3, dtype=np.float32)):
     self.FoV = fish_FoV // 2
     self.radius = fish_h // 2
     R_list = []
@@ -37,7 +37,7 @@ class Fisheye2Pinhole:
     face_x, face_y = np.meshgrid(range(pinhole_w), range(pinhole_h))
     x = xc - face_x
     y = yc - face_y
-    z = np.ones_like(x) * ((pinhole_w * np.sqrt(3)) / 2)
+    z = np.ones_like(x) * ((pinhole_w / np.tan(pinhole_hfov / 180 * np.pi / 2)) / 2)
     x, y, z = x / z, y / z, z / z
     D = np.sqrt(x * x + y * y + z * z)
     coor3d = np.expand_dims(np.dstack([x, y, z]), -1)
