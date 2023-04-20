@@ -283,7 +283,7 @@ class c2e:
       mask = (self.orientation_mask == ori).unsqueeze(0)  # 1, self.output_h, self.output_w, 1
 
       if self.CUDA:
-        masked_grid = Variable(grid * mask.double().expand(-1, -1, -1, 2)).cuda()  # 1, self.output_h, self.output_w, 2
+        masked_grid = Variable(grid * mask.double().expand(-1, -1, -1, 2)).cuda().float()  # 1, self.output_h, self.output_w, 2
       else:
         masked_grid = Variable(grid * mask.double().expand(-1, -1, -1, 2))
 
@@ -326,42 +326,42 @@ class c2e:
 a sample of usage
 """
 if __name__ == '__main__':
-  transe2c = e2c()
-  transe2c2 = e2c(eh=512, ew=1024)
-  oriSize = 800
-  cubeSize = 512
-  transc2e = c2e(cubeW=cubeSize, outH=512, outW=1024)
-  rootdir = "../datasets/3D60/"
-  name = "30_ed1e790a785e4b74b895e41682b2ae881"
-  leftImg = cv2.imread(os.path.join(rootdir, "Center_Left_Down/Matterport3D/", name + "_color_0_Left_Down_0.0.png"), cv2.IMREAD_COLOR)
-  rightImg = cv2.imread(os.path.join(rootdir, "Right/Matterport3D/", name + "_color_0_Right_0.0.png"), cv2.IMREAD_COLOR)
-  depthGT = cv2.imread(os.path.join(rootdir, "Center_Left_Down/Matterport3D/", name + "_depth_0_Left_Down_0.0.exr"), cv2.IMREAD_ANYDEPTH)
-  leftImg = leftImg[:, :, (2, 1, 0)]
-  leftImg = leftImg.transpose((2, 0, 1)).astype(np.float64)
-  rightImg = rightImg.transpose((2, 0, 1)).astype(np.float64)
+  # transe2c = e2c()
+  # transe2c2 = e2c(eh=512, ew=1024)
+  # oriSize = 800
+  # cubeSize = 512
+  # transc2e = c2e(cubeW=cubeSize, outH=512, outW=1024)
+  # rootdir = "../datasets/3D60/"
+  # name = "30_ed1e790a785e4b74b895e41682b2ae881"
+  # leftImg = cv2.imread(os.path.join(rootdir, "Center_Left_Down/Matterport3D/", name + "_color_0_Left_Down_0.0.png"), cv2.IMREAD_COLOR)
+  # rightImg = cv2.imread(os.path.join(rootdir, "Right/Matterport3D/", name + "_color_0_Right_0.0.png"), cv2.IMREAD_COLOR)
+  # depthGT = cv2.imread(os.path.join(rootdir, "Center_Left_Down/Matterport3D/", name + "_depth_0_Left_Down_0.0.exr"), cv2.IMREAD_ANYDEPTH)
+  # leftImg = leftImg[:, :, (2, 1, 0)]
+  # leftImg = leftImg.transpose((2, 0, 1)).astype(np.float64)
+  # rightImg = rightImg.transpose((2, 0, 1)).astype(np.float64)
 
-  leftImg = torch.from_numpy(leftImg)
-  rightImg = torch.from_numpy(rightImg)
-  depthGT = torch.from_numpy(depthGT)
+  # leftImg = torch.from_numpy(leftImg)
+  # rightImg = torch.from_numpy(rightImg)
+  # depthGT = torch.from_numpy(depthGT)
 
-  leftImg.unsqueeze_(0)
-  rightImg.unsqueeze_(0)
-  depthGT.unsqueeze_(0)
-  depthGT.unsqueeze_(0)
+  # leftImg.unsqueeze_(0)
+  # rightImg.unsqueeze_(0)
+  # depthGT.unsqueeze_(0)
+  # depthGT.unsqueeze_(0)
 
-  out_batch = transe2c.ToCubeTensor(leftImg)
-  print(out_batch.shape)
-  div = torch.zeros([3, 256, 10]).double()
-  saveImg = out_batch[0]
-  for i in range(1, 6):
-    saveImg = torch.cat([saveImg, div, out_batch[i]], dim=2)
-  print(saveImg.shape)
-  saveImg = (saveImg - torch.min(saveImg)) / (torch.max(saveImg) - torch.min(saveImg))
-  torchvision.utils.save_image(saveImg, 'cube.png')
-  outErp = transc2e.ToEquirecTensor(out_batch)
-  print(outErp.shape)
-  saveImg = (outErp - torch.min(outErp)) / (torch.max(outErp) - torch.min(outErp))
-  torchvision.utils.save_image(saveImg, 'erp.png')
+  # out_batch = transe2c.ToCubeTensor(leftImg)
+  # print(out_batch.shape)
+  # div = torch.zeros([3, 256, 10]).double()
+  # saveImg = out_batch[0]
+  # for i in range(1, 6):
+  #   saveImg = torch.cat([saveImg, div, out_batch[i]], dim=2)
+  # print(saveImg.shape)
+  # saveImg = (saveImg - torch.min(saveImg)) / (torch.max(saveImg) - torch.min(saveImg))
+  # torchvision.utils.save_image(saveImg, 'cube.png')
+  # outErp = transc2e.ToEquirecTensor(out_batch)
+  # print(outErp.shape)
+  # saveImg = (outErp - torch.min(outErp)) / (torch.max(outErp) - torch.min(outErp))
+  # torchvision.utils.save_image(saveImg, 'erp.png')
 
   # cubeBat = np.ndarray([6, 3, oriSize, oriSize])
   # for i in range(0, 6):
@@ -381,3 +381,16 @@ if __name__ == '__main__':
   # print(saveImg.shape)
   # saveImg = (saveImg - torch.min(saveImg)) / (torch.max(saveImg) - torch.min(saveImg))
   # torchvision.utils.save_image(saveImg, 'cube.png')
+  te2c = c2e(cubeW=2560, outH=1024, outW=2048, CUDA=True)
+  root_dir = '../../datasets/multi_view_huawei_data/huawei_SimpleParking/huawei_parking01/cubemap/'
+  id = 7
+  back = torch.from_numpy(cv2.imread(os.path.join(root_dir, 'cm_rgb1_back_' + str(id) + '.jpg')).transpose((2, 0, 1)).astype(np.float32)).unsqueeze_(0)
+  down = torch.from_numpy(cv2.imread(os.path.join(root_dir, 'cm_rgb1_down_' + str(id) + '.jpg')).transpose((2, 0, 1)).astype(np.float32)).unsqueeze_(0)
+  front = torch.from_numpy(cv2.imread(os.path.join(root_dir, 'cm_rgb1_front_' + str(id) + '.jpg')).transpose((2, 0, 1)).astype(np.float32)).unsqueeze_(0)
+  left = torch.from_numpy(cv2.imread(os.path.join(root_dir, 'cm_rgb1_left_' + str(id) + '.jpg')).transpose((2, 0, 1)).astype(np.float32)).unsqueeze_(0)
+  right = torch.from_numpy(cv2.imread(os.path.join(root_dir, 'cm_rgb1_right_' + str(id) + '.jpg')).transpose((2, 0, 1)).astype(np.float32)).unsqueeze_(0)
+  up = torch.from_numpy(cv2.imread(os.path.join(root_dir, 'cm_rgb1_up_' + str(id) + '.jpg')).transpose((2, 0, 1)).astype(np.float32)).unsqueeze_(0)
+  input_tensor = torch.cat([back, down, front, left, right, up], dim=0).cuda()
+  output_tensor = te2c.ToEquirecTensor(input_tensor)
+  out_erp = output_tensor.cpu().numpy().squeeze().transpose((1, 2, 0))
+  cv2.imwrite('./imgs/erp_parking.jpg', out_erp.astype(np.uint8))
