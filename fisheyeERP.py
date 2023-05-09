@@ -119,22 +119,98 @@ def get_rotate_matrix(x_a, y_a, z_a):  # 绕z,y,z轴旋转的角度（弧度制�
   return R
 
 
+def save_pseudo_map(data, cm_type, name, max_depth, min_depth=0, log=False, mask=None):
+  if mask is None:
+    mask = (data > min_depth) & (data < max_depth)
+  data[data > max_depth] = 0
+  data[data < min_depth] = 0
+  if log:
+    data = np.log(data - min_depth + 1)
+    data = 255 * data / np.log(max_depth + 1)
+  else:
+    data = (data - data.min()) / (max_depth) * 255
+  data = np.clip(data, 0, 255)
+  data = (255 - data).astype(np.uint8)
+  data = cv2.applyColorMap(data, cm_type)
+  data[~mask, :] = 0
+  cv2.imwrite(name, data)
+
+
 if __name__ == '__main__':
-  rotate = get_rotate_matrix(0, 0, 0)
+  # rotate = get_rotate_matrix(0, np.pi, 0)
+  # rotate_r = np.linalg.inv(rotate)
+  # FoV = 190
+  # e2f = ERP2Fisheye(1024, 1024, 1024, 2048, FoV, rotate)
+  # f2e = Fisheye2ERP(1024, 1024, 1024, 2048, FoV, rotate_r)
+  # erp = cv2.imread('./imgs/erp_parking.jpg').transpose((2, 0, 1)).astype(np.float32)
+  # fisheye = e2f.trans(erp)
+  # #erp_2 = f2e.trans(fisheye)
+  # fisheye = fisheye.transpose((1, 2, 0))
+  # fisheye = (fisheye - np.min(fisheye)) / (np.max(fisheye) - np.min(fisheye)) * 255
+  # cv2.imwrite('./imgs/fish_parking-b30' + str(FoV) + '.jpg', fisheye.astype(np.uint8))
+
+  # NOTE: trans pred fish to erp
+  # rv = np.array([-1, 0, 0]) * np.pi / 6
+  # R, _ = cv2.Rodrigues(rv)
+  # FoV = 190
+  # max_depth = 20
+  # cm_type = cv2.COLORMAP_JET
+
+  # f2ergb = Fisheye2ERP(2560, 2560, 320, 640, FoV, R)
+  # fishrgb = cv2.imread('../../datasets/multi_view_huawei_data/huawei_SimpleParking/huawei_parking15/fisheye190/fe_rgb11_205.jpg').transpose((2, 0, 1)).astype(np.float32)
+  # fisheye = np.load('../hetero-cameras-depth/outputs/test/newcrf_parking_super-20/huawei_parking15_fe_rgb11_205_pred.npy').astype(np.float32)
+  # erp_rgb = f2ergb.trans(fishrgb).transpose((1, 2, 0))
+  # #erp_rgb = np.roll(erp_rgb, 320, axis=1)
+  # erp_rgb = erp_rgb[80:240, ::]
+  # cv2.imwrite('./imgs/parking15_205_mono_rgb.png', erp_rgb.astype(np.uint8))
+
+  # erp_gt11 = np.load('../../datasets/multi_view_huawei_data/huawei_SimpleParking/huawei_parking15/erp/erp_depth11_205.npz')['arr_0'].astype(np.float32)
+  # erp_gt11 = cv2.resize(erp_gt11, [640, 320])
+  # #erp_gt11 = np.roll(erp_gt11, 320, axis=1)
+  # erp_gt11 = erp_gt11[80:240, ::]
+  # mask = (erp_gt11 > 0) & (erp_gt11 < max_depth)
+  # save_pseudo_map(erp_gt11, cm_type, './imgs/parking15_205_gt11.png', max_depth, min_depth=0)
+
+  # f2e = Fisheye2ERP(1280, 1280, 320, 640, FoV, R)
+  # fisheye = np.expand_dims(fisheye, axis=0)
+  # erp = f2e.trans(fisheye)
+  # erp = erp.squeeze()
+  # #erp = np.roll(erp, 320, axis=1)
+  # erp = erp[80:240, ::]
+  # mask = mask & (erp > 0)
+  # save_pseudo_map(erp, cm_type, './imgs/parking15_205_mono_pred.png', max_depth, mask=mask)
+
+  # erp_gt = np.load('../../datasets/multi_view_huawei_data/huawei_SimpleParking/huawei_parking15/erp/erp_depth0_205.npz')['arr_0'].astype(np.float32)
+  # erp_gt = cv2.resize(erp_gt, [640, 320])
+  # erp_gt = np.roll(erp_gt, 320, axis=1)
+  # erp_gt = erp_gt[80:240, ::]
+  # mask = (erp_gt > 3) & (erp_gt < max_depth)
+  # save_pseudo_map(erp_gt, cm_type, './imgs/parking15_205_gt.png', max_depth, min_depth=3)
+
+  # erp_mv = np.load('./results/parking15_205.npy').astype(np.float32)
+  # print(erp_mv.max(), erp_mv.min(), erp_mv.dtype, erp_mv.shape)
+  # erp_mv = np.roll(erp_mv, 320, axis=1)
+  # save_pseudo_map(erp_mv, cm_type, './imgs/parking15_205_multi_pred.png', max_depth, min_depth=3, mask=mask)
+
+  #------------------------------------------------------------------------------------------------------------#
+  rotate = get_rotate_matrix(-np.pi/12, np.pi, 0)
   rotate_r = np.linalg.inv(rotate)
-  FoV = 210
-  e2f = ERP2Fisheye(1024, 1024, 512, 1024, FoV, rotate)
-  f2e = Fisheye2ERP(1024, 1024, 512, 1024, FoV, rotate_r)
-  erp = cv2.imread('./imgs/erp_ori.png').transpose((2, 0, 1)).astype(np.float32)
-  fisheye = e2f.trans(erp)
-  erp_2 = f2e.trans(fisheye)
+  FoV = 190
+  e2f = ERP2Fisheye(2560, 2560, 2560, 5120, FoV, rotate)
+  erp_rgb = cv2.imread('/home/custom_users/Datasets/multi_view_huawei_data/huawei_SimpleParking/huawei_parking15_cmp_ori/erp/erp_rgb0_15.jpg')
+  print(erp_rgb.shape)
+  erp_rgb=erp_rgb.transpose((2, 0, 1)).astype(np.float32)
+  fisheye = e2f.trans(erp_rgb)
+  # #erp_2 = f2e.trans(fisheye)
   fisheye = fisheye.transpose((1, 2, 0))
   fisheye = (fisheye - np.min(fisheye)) / (np.max(fisheye) - np.min(fisheye)) * 255
-  cv2.imwrite('./imgs/fish' + str(FoV) + '.png', fisheye.astype(np.uint8))
+  cv2.imwrite('./imgs/fish_parking15_cmp_ori_15_' + str(FoV) + '_2.jpg', fisheye.astype(np.uint8))
 
-  erp_2 = erp_2.transpose((1, 2, 0))
-  erp_2 = (erp_2 - np.min(erp_2)) / (np.max(erp_2) - np.min(erp_2)) * 255
-  cv2.imwrite('./imgs/erp_2_' + str(FoV) + '.png', erp_2.astype(np.uint8))
 
-  fish_mask = ~(f2e.get_fish_mask())
-  cv2.imwrite('./imgs/fish_mask_erp.png', fish_mask * 255)
+
+  # erp_2 = erp_2.transpose((1, 2, 0))
+  # erp_2 = (erp_2 - np.min(erp_2)) / (np.max(erp_2) - np.min(erp_2)) * 255
+  # cv2.imwrite('./imgs/erp_2_' + str(FoV) + '.png', erp_2.astype(np.uint8))
+
+  # fish_mask = ~(f2e.get_fish_mask())
+  # cv2.imwrite('./imgs/fish_mask_erp.png', fish_mask * 255)
