@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 
 class ERP2Fisheye:
+
   def __init__(self, fish_h, fish_w, erp_h, erp_w, FoV, R=np.identity(3, dtype=np.float32)):
     """
     # fish_h,fish_w: shape of output fish eye images
@@ -65,6 +66,7 @@ class ERP2Fisheye:
 
 
 class Fisheye2ERP:
+
   def __init__(self, fish_h, fish_w, erp_h, erp_w, FoV, R=np.identity(3, dtype=np.float32)):
     self.radius = fish_h // 2
     self.FoV = FoV // 2
@@ -109,6 +111,76 @@ class Fisheye2ERP:
 
   def get_fish_mask(self):
     return self.invalidMask
+
+
+class KB4fisheye2ERP:
+
+  def __init__(self, fish_h, fish_w, erp_h, erp_w, fish_FoV, fx, fy, cx, cy, kb_theta_coes, R=np.identity(3, dtype=np.float32)):
+    self.FoV = fish_FoV // 2
+    self.FovTh = self.FoV / 180 * np.pi
+    # KB model paras
+    self.fx = fx
+    self.fy = fy
+    self.cx = cx
+    self.cy = cy
+    self.kb_theta_coes = kb_theta_coes
+    # assume the camera model is KB4: d_theta = theta+k1*theta^3+k2*theta^5+k3*theta^7+k4*theta^9
+    assert (len(self.kb_theta_coes) == 4)
+    erp_x, erp_y = np.meshgrid(range(erp_w), range(erp_h))
+    phi = (erp_x).astype(np.float32) / (erp_w - 1) * 2 * np.pi - np.pi
+    #phi = ((erp_x).astype(np.float32) - (erp_w - 1) / 2) / (erp_w / 2) * np.pi
+    theta = (erp_y).astype(np.float32) / (erp_h - 1) * np.pi - np.pi / 2
+    y = np.sin(theta)  # down
+    x = np.cos(theta) * np.sin(phi)  #right
+    z = np.cos(theta) * np.cos(phi)  #front
+    coor3d = np.expand_dims(np.dstack((x, y, z)), axis=-1)
+    coor3d_r = np.matmul(R, coor3d)  # rotate and transform used here
+    print(coor3d.shape, coor3d_r.shape)
+    fisheye_r = np.sqrt(coor3d_r[:, :, 0] * coor3d_r[:, :, 0] + coor3d_r[:, :, 1] * coor3d_r[:, :, 1])
+    fish_theta = np.clip(np.arctan2(fisheye_r, coor3d_r[:, :, 2]), 0, np.pi)
+    print(fisheye_r.shape, fish_theta.shape)
+    fish_theta_sq = fish_theta * fish_theta
+    fish_dtheta = fish_theta + self.kb_theta_coes[0] * fish_theta * fish_theta_sq + self.kb_theta_coes[
+        1] * fish_theta * fish_theta_sq * fish_theta_sq + self.kb_theta_coes[
+            2] * fish_theta * fish_theta_sq * fish_theta_sq * fish_theta_sq + self.kb_theta_coes[
+                3] * fish_theta * fish_theta_sq * fish_theta_sq * fish_theta_sq * fish_theta_sq
+    # we define y==up and x==left, while in Image Coordinate y==down and x==right
+    fish_phi = np.clip(np.arctan2(coor3d_r[:, :, 1], coor3d_r[:, :, 0]), -np.pi, np.pi).astype(np.float32)
+    # self.invalidMask = (fish_theta > self.FovTh)
+    # fish_theta[self.invalidMask] = 0.0
+    fish_x = self.fx * fish_dtheta * np.cos(fish_phi) + self.cx
+    fish_y = self.fy * fish_dtheta * np.sin(fish_phi) + self.cy
+    self.invalidMask = (fish_x < 0) | (fish_x > fish_w - 1) | (fish_y < 0) | (fish_y > fish_h - 1)
+
+    print(fish_x.min(), fish_x.max(), fish_y.min(), fish_y.max())
+    self.invalidMask = self.invalidMask.squeeze(-1)
+
+    fish_x = np.clip((fish_x / (fish_w - 1)) * 2 - 1.0, -1, 1).astype(np.float32)
+    fish_y = np.clip((fish_y / (fish_h - 1)) * 2 - 1.0, -1, 1).astype(np.float32)
+
+    self.grid = np.concatenate([fish_x, fish_y], axis=2)
+
+  def trans(self, fish):
+    c, h, w = fish.shape
+    print(fish.shape)
+    g = torch.from_numpy(self.grid).unsqueeze(0)
+    fish = torch.from_numpy(fish).unsqueeze(0)
+    erp = F.grid_sample(fish, g, mode='bilinear', align_corners=True)
+    erp = erp.squeeze_(0).numpy()
+    mask = np.repeat(np.expand_dims(self.invalidMask, 0), c, 0)
+    erp[mask] = 0.0
+    return erp
+
+  def get_fish_mask(self):
+    return self.invalidMask
+
+
+def get_rotate_matrix(x_a, y_a, z_a):  # 绕z,y,z轴旋转的角度（弧度制）z轴朝前，y轴朝上，x轴朝左
+  Rx = np.array([[1, 0, 0], [0, np.cos(x_a), -np.sin(x_a)], [0, np.sin(x_a), np.cos(x_a)]])
+  Rz = np.array([[np.cos(z_a), -np.sin(z_a), 0], [np.sin(z_a), np.cos(z_a), 0], [0, 0, 1]])
+  Ry = np.array([[np.cos(y_a), 0, -np.sin(y_a)], [0, 1, 0], [np.sin(y_a), 0, np.cos(y_a)]])
+  R = np.dot(np.dot(Rx, Rz), Ry)
+  return R
 
 
 def get_rotate_matrix(x_a, y_a, z_a):  # 绕z,y,z轴旋转的角度（弧度制）z轴朝前，y轴朝上，x轴朝左
@@ -193,20 +265,19 @@ if __name__ == '__main__':
   # save_pseudo_map(erp_mv, cm_type, './imgs/parking15_205_multi_pred.png', max_depth, min_depth=3, mask=mask)
 
   #------------------------------------------------------------------------------------------------------------#
-  rotate = get_rotate_matrix(-np.pi/12, np.pi, 0)
+  rotate = get_rotate_matrix(-np.pi / 12, np.pi, 0)
   rotate_r = np.linalg.inv(rotate)
   FoV = 190
   e2f = ERP2Fisheye(2560, 2560, 2560, 5120, FoV, rotate)
-  erp_rgb = cv2.imread('/home/custom_users/Datasets/multi_view_huawei_data/huawei_SimpleParking/huawei_parking15_cmp_ori/erp/erp_rgb0_15.jpg')
+  erp_rgb = cv2.imread(
+      '/home/custom_users/Datasets/multi_view_huawei_data/huawei_SimpleParking/huawei_parking15_cmp_ori/erp/erp_rgb0_15.jpg')
   print(erp_rgb.shape)
-  erp_rgb=erp_rgb.transpose((2, 0, 1)).astype(np.float32)
+  erp_rgb = erp_rgb.transpose((2, 0, 1)).astype(np.float32)
   fisheye = e2f.trans(erp_rgb)
   # #erp_2 = f2e.trans(fisheye)
   fisheye = fisheye.transpose((1, 2, 0))
   fisheye = (fisheye - np.min(fisheye)) / (np.max(fisheye) - np.min(fisheye)) * 255
   cv2.imwrite('./imgs/fish_parking15_cmp_ori_15_' + str(FoV) + '_2.jpg', fisheye.astype(np.uint8))
-
-
 
   # erp_2 = erp_2.transpose((1, 2, 0))
   # erp_2 = (erp_2 - np.min(erp_2)) / (np.max(erp_2) - np.min(erp_2)) * 255
